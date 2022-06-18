@@ -1,0 +1,17 @@
+{
+  "name": "compile-server",
+  "version": "0.1.0",
+  "description": "",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node app"
+  },
+  "keywords": [],
+  "author": "mahdif <mahdif1380@outlook.com>",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.0.1",
+    "express": "^4.18.1"
+  }
+}
