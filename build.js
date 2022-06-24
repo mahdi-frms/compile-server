@@ -2,6 +2,8 @@ import { promises, createWriteStream } from 'fs'
 import db from './db.js'
 import storage from './storage.js'
 import Compool from './compool.js'
+import Depg from './depg.js'
+
 const fs = promises
 
 const root = process.argv[2]
@@ -50,7 +52,7 @@ async function makeSrcDir(pid, tree) {
     return map
 }
 
-async function getVersionList(pid, config, version) {
+async function getVersionList(pid, tree, version) {
     const versionFile = `${projectDir(pid)}/version.json`;
     let versionList;
     if (!await fsExists(versionFile)) {
@@ -60,7 +62,7 @@ async function getVersionList(pid, config, version) {
         versionList = JSON.parse(await fs.readFile(versionFile));
     }
     if (versionList.config < version) {
-        versionList.files = await makeSrcDir(pid, config.tree);
+        versionList.files = await makeSrcDir(pid, tree);
         versionList.config = version
     }
     return versionList;
@@ -124,14 +126,23 @@ async function compileSrcTree(pid, versionList) {
     return { log, success }
 }
 
+function createDepGraph(targets) {
+    let graph = new Depg()
+    for (const tar in targets) {
+        for (const d of targets[tar].dependency)
+            graph.dep(tar, d);
+    }
+    return graph;
+}
+
 async function build(bid) {
     const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
-    const versionList = await getVersionList(pid, config, version);
+    const versionList = await getVersionList(pid, config.tree, version);
     await updateSrcTree(pid, versionList);
     await compileSrcTree(pid, versionList);
+    let depg = createDepGraph(config.target);
 
-    // create project dependency graph
     // link every target after all of it's dependencies are linked
     // upload target files
     // upload log file
