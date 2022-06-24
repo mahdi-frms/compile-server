@@ -66,4 +66,4 @@ function db() {
 
 let dbObj = new db()
 
-export { dbObj as db };
+export default dbObj;
