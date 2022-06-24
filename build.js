@@ -10,6 +10,16 @@ function projectDir(pid) {
     return `${root}/projects/${pid}`
 }
 
+async function fsExists(path) {
+    try {
+        await fs.access(path);
+        return true;
+    }
+    catch (err) {
+        return false;
+    }
+}
+
 async function makeProjectDir(pid) {
     const projdir = projectDir(pid);
     await fs.mkdir(`${projdir}/objects/`, { recursive: true });
@@ -17,23 +27,22 @@ async function makeProjectDir(pid) {
 }
 
 async function makeTree(tree, path, map) {
-    if (tree instanceof Number) {
-        map.set(tree, path)
+    if (!isNaN(tree)) {
+        map[String(tree)] = { path, version: 0 }
     }
     else {
         await fs.mkdir(path);
-        for (const ch of tree)
-            await makeTree(tree[ch], `${path}/${ch}`);
+        for (const ch in tree)
+            await makeTree(tree[ch], `${path}/${ch}`, map);
     }
 }
 
 async function makeSrcDir(pid, tree) {
-    const srcDir = `${projectDir(pid)}/src/`;
-    if (await fs.stat(srcDir).isFile()) {
+    const srcDir = `${projectDir(pid)}/src`;
+    if (await fsExists(srcDir)) {
         await fs.rm(srcDir, { recursive: true, force: true });
     }
-    let map = new Map();
-    await fs.mkdir(srcDir);
+    let map = {};
     await makeTree(tree, srcDir, map)
     return map
 }
@@ -41,21 +50,21 @@ async function makeSrcDir(pid, tree) {
 async function getVersionList(pid, config, version) {
     const versionFile = `${projectDir(pid)}/version.json`;
     let versionList;
-    if (!await fs.stat(versionFile).isFile()) {
+    if (!await fsExists(versionFile)) {
         versionList = { config: 0, files: {} };
     }
     else {
         versionList = JSON.parse(await fs.readFile(versionFile));
     }
     if (versionList.config < version) {
-        versionList.files = {}
-        const map = await makeSrcDir(pid, config.tree);
-        for (const entry of map)
-            versionList.files[entry[0]] = { version: 0, path: entry[1] };
+        versionList.files = await makeSrcDir(pid, config.tree);
+        versionList.config = version
     }
+    return versionList;
 }
 
 async function updateFile(objkey, path) {
+    console.log(objkey, '->', path);
     return new Promise(async (res, rej) => {
         try {
             let strm = await storage.getObject(minioFilesBucket, objkey);
@@ -78,10 +87,11 @@ async function updateSrcTree(pid, versionList) {
         if (!dbentry)
             return false;
         if (dbentry.version > file.version) {
-            updateList.push(updateFile(dbentry.objkey, file.path));
+            updateList.push(updateFile(dbentry.key, file.path));
             file.version = dbentry.version;
         }
     }
+    await fs.writeFile(`${projectDir(pid)}/version.json`, JSON.stringify(versionList));
     try {
         await Promise.all(updateList);
         return true;
@@ -92,7 +102,7 @@ async function updateSrcTree(pid, versionList) {
 }
 
 async function build(bid) {
-    const { pid, config, version } = await db.getProject(bid);
+    const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
     const versionList = await getVersionList(pid, config, version);
     await updateSrcTree(pid, versionList);
