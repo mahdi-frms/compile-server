@@ -1,8 +1,10 @@
-import { promises } from 'fs'
+import { promises, createWriteStream } from 'fs'
 import db from './db.js'
+import storage from './storage.js'
 const fs = promises
 
 const root = process.argv[2]
+const minioFilesBucket = 'projsrc'
 
 function projectDir(pid) {
     return `${root}/projects/${pid}`
@@ -36,7 +38,7 @@ async function makeSrcDir(pid, tree) {
     return map
 }
 
-async function getVersionList(config, version) {
+async function getVersionList(pid, config, version) {
     const versionFile = `${projectDir(pid)}/version.json`;
     let versionList;
     if (!await fs.stat(versionFile).isFile()) {
@@ -53,12 +55,47 @@ async function getVersionList(config, version) {
     }
 }
 
+async function updateFile(objkey, path) {
+    return new Promise(async (res, rej) => {
+        try {
+            let strm = await storage.getObject(minioFilesBucket, objkey);
+            strm.pipe(createWriteStream(path));
+            res();
+        }
+        catch (err) {
+            rej(err)
+        }
+    })
+}
+
+async function updateSrcTree(pid, versionList) {
+    let updateList = []
+
+    const dbfiles = await db.getFiles(pid);
+    for (const fid in versionList.files) {
+        let file = versionList.files[fid];
+        const dbentry = dbfiles.find(f => { return f.id == Number(fid) });
+        if (!dbentry)
+            return false;
+        if (dbentry.version > file.version) {
+            updateList.push(updateFile(dbentry.objkey, file.path));
+            file.version = dbentry.version;
+        }
+    }
+    try {
+        await Promise.all(updateList);
+        return true;
+    }
+    catch (err) {
+        return false;
+    }
+}
+
 async function build(bid) {
-    const { config, pid, version } = await db.getProject(bid);
+    const { pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
-    const versionList = await getVersionList(config, version);
-    // load all file entries from db
-    // update newer files
+    const versionList = await getVersionList(pid, config, version);
+    await updateSrcTree(pid, versionList);
 
     // create project dependency graph
     // compile every source file and store log

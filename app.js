@@ -1,6 +1,6 @@
+import { } from 'dotenv/config'
 import express from 'express'
 import build from './build.js'
-import { } from 'dotenv/config'
 
 const app = express();
 
