@@ -39,13 +39,12 @@ function Semaphore(value) {
 
 async function createChild(bin, args) {
     return new Promise((res, rej) => {
-        let meslog = ''
-        let errlog = ''
-        let ch = spawn('gcc', ['-c', src, '-o', output]);
-        ch.stdout.on('data', (data) => { meslog += data });
-        ch.stderr.on('data', (data) => { errlog += data });
+        let log = ''
+        let ch = spawn(bin, args);
+        ch.stdout.on('data', (data) => { log += data });
+        ch.stderr.on('data', (data) => { log += data });
         ch.on('exit', (status) => {
-            res({ meslog, errlog, status });
+            res({ log, status });
         })
     })
 }
@@ -59,3 +58,5 @@ function Compool(size) {
         return rsl;
     }
 }
+
+export default Compool

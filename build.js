@@ -1,10 +1,13 @@
 import { promises, createWriteStream } from 'fs'
 import db from './db.js'
 import storage from './storage.js'
+import Compool from './compool.js'
 const fs = promises
 
 const root = process.argv[2]
 const minioFilesBucket = 'projsrc'
+
+let compool = new Compool(Number(process.env.BUILD_POOL_SIZE));
 
 function projectDir(pid) {
     return `${root}/projects/${pid}`
@@ -101,14 +104,34 @@ async function updateSrcTree(pid, versionList) {
     }
 }
 
+async function compileSrcTree(pid, versionList) {
+    let fids = [];
+    let buildTasks = [];
+    for (const fid in versionList.files) {
+        const { path } = versionList.files[fid];
+        buildTasks.push(compool.compile(path, `${projectDir(pid)}/objects/${fid}.o`));
+        fids.push(fid)
+    }
+    const results = await Promise.all(buildTasks);
+    let log = '';
+    let success = true;
+    for (let i = 0; i < buildTasks.length; i++) {
+        const path = versionList.files[fids[i]];
+        const rsl = results[i];
+        log += `----> ${path}\n\n${rsl.log}\n\n`;
+        success &= rsl.status == 0;
+    }
+    return { log, success }
+}
+
 async function build(bid) {
     const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
     const versionList = await getVersionList(pid, config, version);
     await updateSrcTree(pid, versionList);
+    await compileSrcTree(pid, versionList);
 
     // create project dependency graph
-    // compile every source file and store log
     // link every target after all of it's dependencies are linked
     // upload target files
     // upload log file
