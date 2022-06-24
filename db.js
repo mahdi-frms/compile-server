@@ -30,7 +30,7 @@ function db() {
 
     this.getProject = async (bid) => {
         let rsl = await this.query(
-            `select P.id as id, P.name as name, P.config as config
+            `select P.id as id, P.name as name, P.config as config P.version as version
             from builds as B join projects as P on B.pid = P.id where B.id = $1;`
             , [bid]);
         if (rsl.rowCount == 0)
@@ -39,7 +39,8 @@ function db() {
         return {
             id: rsl.id,
             config: rsl.config,
-            name: rsl.name
+            name: rsl.name,
+            version: rsl.version
         };
     }
     this.getFiles = async (pid) => {
