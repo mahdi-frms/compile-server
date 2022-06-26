@@ -126,22 +126,12 @@ async function compileSrcTree(pid, versionList) {
     return { log, success }
 }
 
-function createDepGraph(targets) {
-    let graph = new Depg()
-    for (const tar in targets) {
-        for (const d of targets[tar].dependency)
-            graph.dep(tar, d);
-    }
-    return graph;
-}
-
 async function build(bid) {
     const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
     const versionList = await getVersionList(pid, config.tree, version);
     await updateSrcTree(pid, versionList);
     await compileSrcTree(pid, versionList);
-    let depg = createDepGraph(config.target);
 
     // link every target after all of it's dependencies are linked
     // upload target files
