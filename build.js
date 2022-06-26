@@ -4,6 +4,7 @@ import storage from './storage.js'
 import Compool from './compool.js'
 import Depg from './depg.js'
 import Tasklist from './tasklist.js'
+import notify from './notify.js'
 
 const fs = promises
 
@@ -256,7 +257,7 @@ async function build(bid) {
     const results = await makeAll(pid, depg, dbFiles, config.targets, versionList);
     await updateVersionList(pid, versionList);
     await uploadResults(pid, bid, config.targets, results);
-    // notify server
+    await notify(pid);
 }
 
 export default build;
