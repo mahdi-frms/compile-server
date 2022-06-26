@@ -161,7 +161,10 @@ async function makeAll(pid, depg, dbFiles, targets, versionList) {
             else
                 depg.fail(key)
             if (log.length)
-                glog += `----> ${versionList.files[key.slice(1)].path}\n\n${log}\n\n`;
+                if (kind == 'T')
+                    glog += `----> target ${key.slice(1)}\n\n${log}\n\n`;
+                else
+                    glog += `----> ${versionList.files[key.slice(1)].path}\n\n${log}\n\n`;
         }
     }
 }
