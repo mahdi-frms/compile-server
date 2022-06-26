@@ -57,6 +57,13 @@ function Compool(size) {
         this.semaphore.signal();
         return rsl;
     }
+    this.link = async function (objs, deps, output) {
+        const ldeps = deps.map((d) => { return `-l${d}`; })
+        await this.semaphore.wait();
+        const rsl = createChild('gcc', objs.concat(ldeps).concat(['-o', output]));
+        this.semaphore.signal();
+        return rsl;
+    }
 }
 
-export default Compool
+export default Compool;

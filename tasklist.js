@@ -17,7 +17,7 @@ function Tasklist() {
         this.tasks[idx] = kmap(task, key);
     }
 
-    this.wait = () => {
+    this.wait = async () => {
         const { result, key } = await Promise.race(this.tasks);
         const idx = this.map[key];
         this.tasks[idx] = never();

@@ -22,7 +22,8 @@ function Depg() {
             this.nodes[n] = {
                 status: Status.Ready,
                 deps: [],
-                final: final ? Final.Final : Final.Not
+                final: final ? Final.Final : Final.Not,
+                mask: false
             };
     }
     this.dep = (n1, n2) => {
@@ -44,10 +45,20 @@ function Depg() {
             }
         }
     }
+    this.end = () => {
+        for (const n in this.nodes) {
+            const node = this.nodes[n];
+            if (node.status == Status.Wait || node.status == Status.Ready)
+                return false;
+        }
+        return true;
+    }
     this.ready = () => {
         let r = [];
         for (const n in this.nodes)
-            if (this.nodes[n].status == Status.Ready)
+            if (this.nodes[n].status == Status.Ready &&
+                this.nodes[n].final != Final.Not &&
+                !this.nodes[n].mask)
                 r.push(n);
         return r;
     }
@@ -62,9 +73,9 @@ function Depg() {
         if (node.status != Status.Wait)
             return;
         let intact = 0;
-        let status = Status.ready;
+        let status = Status.Ready;
         for (const d of node.deps) {
-            const dep = node.deps[d];
+            const dep = this.nodes[d];
             if (dep.status == Status.Failed || dep.status == Status.Depfailed) {
                 status = Status.Depfailed;
                 break;
@@ -98,7 +109,7 @@ function Depg() {
         let node = this.nodes[n];
         if (!node)
             throw 'node must exist';
-        if (node.deps.length == 0)
+        if (node.deps.length > 0)
             throw 'node must be independent';
         node.status = Status.Intact;
         this.checkDeps(n);
@@ -110,6 +121,15 @@ function Depg() {
         if (node.status != Status.Ready)
             throw 'node must be ready';
         node.status = Status.Failed;
+        this.checkDeps(n);
+    }
+    this.mask = (n) => {
+        let node = this.nodes[n];
+        if (!node)
+            throw 'node must exist';
+        if (node.status != Status.Ready)
+            throw 'node must be ready';
+        node.mask = true;
         this.checkDeps(n);
     }
 }

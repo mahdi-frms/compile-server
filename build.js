@@ -3,6 +3,7 @@ import db from './db.js'
 import storage from './storage.js'
 import Compool from './compool.js'
 import Depg from './depg.js'
+import Tasklist from './tasklist.js'
 
 const fs = promises
 
@@ -65,7 +66,6 @@ async function getVersionList(pid) {
 }
 
 async function updateFile(objkey, path) {
-    console.log(objkey, '->', path);
     return new Promise(async (res, rej) => {
         try {
             let strm = await storage.getObject(minioFilesBucket, objkey);
@@ -76,50 +76,6 @@ async function updateFile(objkey, path) {
             rej(err)
         }
     })
-}
-
-async function updateSrcTree(pid, versionList) {
-    let updateList = []
-
-    const dbfiles = await db.getFiles(pid);
-    for (const fid in versionList.files) {
-        let file = versionList.files[fid];
-        const dbentry = dbfiles.find(f => { return f.id == Number(fid) });
-        if (!dbentry)
-            return false;
-        if (dbentry.version > file.version) {
-            updateList.push(updateFile(dbentry.key, file.path));
-            file.version = dbentry.version;
-        }
-    }
-    await fs.writeFile(`${projectDir(pid)}/version.json`, JSON.stringify(versionList));
-    try {
-        await Promise.all(updateList);
-        return true;
-    }
-    catch (err) {
-        return false;
-    }
-}
-
-async function compileSrcTree(pid, versionList) {
-    let fids = [];
-    let buildTasks = [];
-    for (const fid in versionList.files) {
-        const { path } = versionList.files[fid];
-        buildTasks.push(compool.compile(path, `${projectDir(pid)}/objects/${fid}.o`));
-        fids.push(fid)
-    }
-    const results = await Promise.all(buildTasks);
-    let log = '';
-    let success = true;
-    for (let i = 0; i < buildTasks.length; i++) {
-        const path = versionList.files[fids[i]];
-        const rsl = results[i];
-        log += `----> ${path}\n\n${rsl.log}\n\n`;
-        success &= rsl.status == 0;
-    }
-    return { log, success }
 }
 
 function mapdbFiles(list) {
@@ -160,6 +116,60 @@ function createDepGrapgh(targets, versionList, dbFiles) {
     return graph;
 }
 
+async function makeTarget(pid, tar, targets, dbFiles, versionList) {
+    const kind = tar[0];
+    if (kind == 'S') {
+        const fid = tar.slice(1);
+        if (!dbFiles[fid])
+            return false;
+        await updateFile(dbFiles[fid].key, versionList.files[fid].path);
+        return true;
+    }
+    else if (kind == 'O') {
+        const fid = tar.slice(1);
+        return await compool.compile(versionList.files[fid].path, `${projectDir(pid)}/objects/${fid}.o`);
+    }
+    else { // target
+        tar = tar.slice(1);
+        const objs = targets[tar].src.map((s) => { return `${projectDir(pid)}/objects/${s}.o`; })
+        return await compool.link(objs, targets[tar].dependency || [], `${projectDir(pid)}/targets/${tar}`);
+    }
+}
+
+async function makeAll(pid, depg, dbFiles, targets, versionList) {
+    let tasks = new Tasklist();
+    let glog = ''
+    while (!depg.end()) {
+        const rdy = depg.ready();
+        for (const tar of rdy) {
+            depg.mask(tar);
+            console.log(tar)
+            tasks.append(tar, makeTarget(pid, tar, targets, dbFiles, versionList))
+        }
+        const { key, result } = await tasks.wait();
+        const kind = key[0];
+        if (kind == 'S') {
+            if (result)
+                depg.resolve(key);
+            else
+                depg.fail(key);
+        }
+        else {
+            const { status, log } = result;
+            if (status == 0)
+                depg.resolve(key)
+            else
+                depg.fail(key)
+            if (log.length)
+                glog += `----> ${versionList.files[key.slice(1)].path}\n\n${log}\n\n`;
+        }
+    }
+}
+
+async function updateVersionList(pid, versionList) {
+    await fs.writeFile(`${projectDir(pid)}/version.json`, JSON.stringify(versionList));
+}
+
 async function build(bid) {
     const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
@@ -170,10 +180,9 @@ async function build(bid) {
     }
     const dbFiles = mapdbFiles(await db.getFiles(pid));
     let depg = createDepGrapgh(config.targets, versionList, dbFiles);
+    await makeAll(pid, depg, dbFiles, config.targets, versionList);
+    await updateVersionList(pid, versionList);
 
-    console.log(depg)
-
-    // link every target after all of it's dependencies are linked
     // upload target files
     // upload log file
     // update build entry
