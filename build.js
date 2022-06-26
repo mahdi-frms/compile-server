@@ -142,7 +142,10 @@ async function makeTarget(pid, tar, targets, dbFiles, versionList) {
     else { // target
         tar = tar.slice(1);
         const objs = targets[tar].src.map((s) => { return `${projectDir(pid)}/objects/${s}.o`; })
-        return await compool.link(objs, targets[tar].dependency || [], `${projectDir(pid)}/targets/${tar}`);
+        if (targets[tar].output == 'bin')
+            return await compool.link(objs, targets[tar].dependency || [], `${projectDir(pid)}/targets/${tar}`);
+        else
+            return await compool.archive(objs, `${projectDir(pid)}/targets/lib${tar}.a`);
     }
 }
 

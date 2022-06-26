@@ -64,6 +64,12 @@ function Compool(size) {
         this.semaphore.signal();
         return rsl;
     }
+    this.archive = async function (objs, output) {
+        await this.semaphore.wait();
+        const rsl = createChild('ar', ['rcs', output].concat(objs));
+        this.semaphore.signal();
+        return rsl;
+    }
 }
 
 export default Compool;
