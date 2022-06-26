@@ -233,7 +233,7 @@ async function uploadResults(pid, bid, targets, results) {
                 await db.addTarget(bid, tar, objkey);
             }
         }
-        else {
+        else if (lastTargets[tar]) {
             const objkey = lastTargets[tar];
             await db.addTarget(bid, tar, objkey);
         }
