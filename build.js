@@ -7,9 +7,17 @@ import Tasklist from './tasklist.js'
 
 const fs = promises
 
-const root = process.argv[2]
+const Result = {
+    CompileFailed: 'C',
+    FileNotUploaded: 'U',
+    UnmetDependency: 'D',
+    LinkingFailed: 'L',
+    OK: '+',
+}
 const minioFilesBucket = 'projsrc'
+const minioTargetsBucket = 'buildtar'
 
+const root = process.argv[2]
 let compool = new Compool(Number(process.env.BUILD_POOL_SIZE));
 
 function projectDir(pid) {
@@ -105,12 +113,13 @@ function createDepGrapgh(targets, versionList, dbFiles) {
             graph.add(`O${fid}`, false);
             graph.dep(`O${fid}`, `S${fid}`);
             graph.dep(`T${tar}`, `O${fid}`);
-            if (dbFile.version > localFile.version) {
-                localFile.version = dbFile.version;
-            }
-            else {
-                graph.intact(`S${fid}`);
-            }
+            if (dbFile)
+                if (dbFile.version > localFile.version) {
+                    localFile.version = dbFile.version;
+                }
+                else {
+                    graph.intact(`S${fid}`);
+                }
         }
     }
     return graph;
@@ -136,14 +145,46 @@ async function makeTarget(pid, tar, targets, dbFiles, versionList) {
     }
 }
 
+function getStates(depg) {
+    let files = {};
+    let targets = {};
+    const { failed, resolved, depfailed } = depg.states();
+    for (const f of failed) {
+        const kind = f[0]
+        const id = f.slice(1)
+        if (kind == 'S')
+            files[id] = Result.FileNotUploaded;
+        else if (kind == 'O')
+            files[id] = Result.CompileFailed;
+        else if (kind == 'T')
+            targets[id] = Result.LinkingFailed;
+    }
+    for (const f of depfailed) {
+        const kind = f[0]
+        const id = f.slice(1)
+        if (kind == 'T')
+            targets[id] = Result.UnmetDependency;
+    }
+    for (const f of resolved) {
+        const kind = f[0]
+        const id = f.slice(1)
+        if (kind == 'O' || kind == 'S')
+            files[id] = Result.OK;
+        else {
+            targets[id] = Result.OK;
+        }
+    }
+    return { files, targets };
+}
+
 async function makeAll(pid, depg, dbFiles, targets, versionList) {
     let tasks = new Tasklist();
-    let glog = ''
+    let glog = '';
+    let success = true;
     while (!depg.end()) {
         const rdy = depg.ready();
         for (const tar of rdy) {
             depg.mask(tar);
-            console.log(tar)
             tasks.append(tar, makeTarget(pid, tar, targets, dbFiles, versionList))
         }
         const { key, result } = await tasks.wait();
@@ -151,15 +192,19 @@ async function makeAll(pid, depg, dbFiles, targets, versionList) {
         if (kind == 'S') {
             if (result)
                 depg.resolve(key);
-            else
+            else {
+                success = false;
                 depg.fail(key);
+            }
         }
         else {
             const { status, log } = result;
             if (status == 0)
                 depg.resolve(key)
-            else
+            else {
+                success = false;
                 depg.fail(key)
+            }
             if (log.length)
                 if (kind == 'T')
                     glog += `----> target ${key.slice(1)}\n\n${log}\n\n`;
@@ -167,10 +212,35 @@ async function makeAll(pid, depg, dbFiles, targets, versionList) {
                     glog += `----> ${versionList.files[key.slice(1)].path}\n\n${log}\n\n`;
         }
     }
+    const rsl = getStates(depg);
+    return { log: glog, files: rsl.files, targets: rsl.targets, success };
 }
 
 async function updateVersionList(pid, versionList) {
     await fs.writeFile(`${projectDir(pid)}/version.json`, JSON.stringify(versionList));
+}
+
+async function uploadResults(pid, bid, targets, results) {
+    const { log } = results;
+    const tars = results.targets;
+    const lastTargets = db.lastTargets(pid);
+    for (const tar in targets) {
+        if (tar in tars) {
+            if (tars[tar] == Result.OK) {
+                const objkey = `${bid}-${tar}`;
+                await storage.fPutObject(minioTargetsBucket, objkey, `${projectDir(pid)}/targets/${tar}`);
+                await db.addTarget(bid, tar, objkey);
+            }
+        }
+        else {
+            const objkey = lastTargets[tar];
+            await db.addTarget(bid, tar, objkey);
+        }
+    }
+    const logkey = `${bid}-log`;
+    delete results.log;
+    await storage.putObject(minioTargetsBucket, logkey, log);
+    await db.updateBuild(bid, logkey, results);
 }
 
 async function build(bid) {
@@ -183,12 +253,9 @@ async function build(bid) {
     }
     const dbFiles = mapdbFiles(await db.getFiles(pid));
     let depg = createDepGrapgh(config.targets, versionList, dbFiles);
-    await makeAll(pid, depg, dbFiles, config.targets, versionList);
+    const results = await makeAll(pid, depg, dbFiles, config.targets, versionList);
     await updateVersionList(pid, versionList);
-
-    // upload target files
-    // upload log file
-    // update build entry
+    await uploadResults(pid, bid, config.targets, results);
     // notify server
 }
 

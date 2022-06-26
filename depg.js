@@ -132,6 +132,20 @@ function Depg() {
         node.mask = true;
         this.checkDeps(n);
     }
+    this.states = () => {
+        let resolved = [];
+        let failed = [];
+        let depfailed = [];
+        for (const n in this.nodes) {
+            if (this.nodes[n].status == Status.Failed)
+                failed.push(n);
+            else if (this.nodes[n].status == Status.Depfailed)
+                depfailed.push(n);
+            else if (this.nodes[n].status == Status.Resolved)
+                resolved.push(n);
+        }
+        return { resolved, failed, depfailed };
+    }
 }
 
 export default Depg;

@@ -63,8 +63,20 @@ function db() {
         await this.execute(`insert into targets(bid,name,objkey) values ($1,$2,$3)`
             , [bid, tarname, objkey]);
     }
+    this.lastTargets = async (pid) => {
+        let rsl = await this.query(`with temp(bid,name) as (select MAX(T.bid), T.name
+            from projects P join builds B on P.id=B.pid join targets T on T.bid=B.id
+            where P.id=$1 group by T.name)
+            select T.name as name, T.objkey as objkey
+            from targets as T join temp as M on T.name = M.name and T.bid = M.bid;`, [pid]);
+        rsl = rsl.rows;
+        let map = {};
+        for (const r of rsl) {
+            map[r.name] = r.objkey;
+        }
+        return rsl.rows;
+    }
 }
-
 let dbObj = new db()
 
 export default dbObj;
