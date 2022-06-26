@@ -52,7 +52,7 @@ async function makeSrcDir(pid, tree) {
     return map
 }
 
-async function getVersionList(pid, tree, version) {
+async function getVersionList(pid) {
     const versionFile = `${projectDir(pid)}/version.json`;
     let versionList;
     if (!await fsExists(versionFile)) {
@@ -60,10 +60,6 @@ async function getVersionList(pid, tree, version) {
     }
     else {
         versionList = JSON.parse(await fs.readFile(versionFile));
-    }
-    if (versionList.config < version) {
-        versionList.files = await makeSrcDir(pid, tree);
-        versionList.config = version
     }
     return versionList;
 }
@@ -126,12 +122,56 @@ async function compileSrcTree(pid, versionList) {
     return { log, success }
 }
 
+function mapdbFiles(list) {
+    let map = {}
+    for (const f of list) {
+        const { id, version, key } = f;
+        map[`${id}`] = { version, key };
+    }
+    return map;
+}
+
+function createDepGrapgh(targets, versionList, dbFiles) {
+    let graph = new Depg();
+    for (const tar in targets) {
+        const target = targets[tar];
+        graph.add(`T${tar}`, true);
+        for (const dep of target.dependency || []) {
+            if (dep in targets) {
+                graph.add(`T${dep}`, true);
+                graph.dep(`T${tar}`, `T${dep}`);
+            }
+        }
+        for (const fid of target.src) {
+            const dbFile = dbFiles[`${fid}`];
+            const localFile = versionList.files[`${fid}`];
+            graph.add(`S${fid}`, false);
+            graph.add(`O${fid}`, false);
+            graph.dep(`O${fid}`, `S${fid}`);
+            graph.dep(`T${tar}`, `O${fid}`);
+            if (dbFile.version > localFile.version) {
+                localFile.version = dbFile.version;
+            }
+            else {
+                graph.intact(`S${fid}`);
+            }
+        }
+    }
+    return graph;
+}
+
 async function build(bid) {
     const { id: pid, config, version } = await db.getProject(bid);
     await makeProjectDir(pid);
     const versionList = await getVersionList(pid, config.tree, version);
-    await updateSrcTree(pid, versionList);
-    await compileSrcTree(pid, versionList);
+    if (versionList.config < version) {
+        versionList.files = await makeSrcDir(pid, config.tree);
+        versionList.config = version
+    }
+    const dbFiles = mapdbFiles(await db.getFiles(pid));
+    let depg = createDepGrapgh(config.targets, versionList, dbFiles);
+
+    console.log(depg)
 
     // link every target after all of it's dependencies are linked
     // upload target files

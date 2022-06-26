@@ -31,15 +31,15 @@ function Depg() {
         if (!this.nodes[n1].deps.includes(n2)) {
             this.nodes[n1].deps.push(n2);
             this.nodes[n1].status = Status.Wait;
-            if (this.nodes[n1].final != Final.Not)
-                this.final(this.nodes[n2]);
+            if (this.nodes[n1].final != Final.Not && this.nodes[n2].final == Final.Not)
+                this.final(n2);
         }
     }
     this.final = (n) => {
         let node = this.nodes[n];
         if (node.final == Final.Not) {
             node.final = Final.FinalDep;
-            for (const d in node.deps) {
+            for (const d of node.deps) {
                 this.final(d);
             }
         }
