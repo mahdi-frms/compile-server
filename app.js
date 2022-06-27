@@ -1,7 +1,7 @@
 import { } from 'dotenv/config'
 import express from 'express'
-import build from './build.js'
-import init from './init.js'
+import build from './src/build.js'
+import init from './src/init.js'
 
 const app = express();
 
