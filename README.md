@@ -18,7 +18,7 @@ MINIO_ENDPOINT=                         # minio
 MINIO_ACCESSKEY=                        # minio
 MINIO_SECRETKEY=                        # minio
 SERVER=                                 # core service endpoint
-BUILD_POOL_SIZE=8                       # compiler pool size
+BUILD_POOL_SIZE=                        # compiler pool size
 RCS_SECRET=                             # secret used for communicating
 ```
 
